@@ -14,6 +14,7 @@ var
   pool: HttpPool
   disableTid: bool
   apiProxy: string
+  twitterRelayBaseUrl: string
   maxRetries: int
   retryDelayMs: int
 
@@ -33,14 +34,26 @@ proc setApiProxy*(url: string) =
     if "http" notin apiProxy:
       apiProxy = "http://" & apiProxy
 
+proc setTwitterRelayBaseUrl*(url: string) =
+  twitterRelayBaseUrl = ""
+  if url.len > 0:
+    twitterRelayBaseUrl = url.strip(chars={'/'}) & "/"
+    if not (twitterRelayBaseUrl.startsWith("http://") or twitterRelayBaseUrl.startsWith("https://")):
+      twitterRelayBaseUrl = "http://" & twitterRelayBaseUrl
+
 proc toUrl(req: ApiReq; sessionKind: SessionKind): Uri =
   let url = case sessionKind
     of oauth:  req.oauth
     of cookie: req.cookie
+  let isRest = url.endpoint.startsWith("1.1/") or url.endpoint.startsWith("2/")
+  if twitterRelayBaseUrl.len > 0:
+    let path = if isRest: url.endpoint else: "i/api/graphql/" & url.endpoint
+    return parseUri(twitterRelayBaseUrl) / path ? url.params
+
   let base = case sessionKind
     of oauth:  "https://api.x.com"
     of cookie: "https://x.com/i/api"
-  let prefix = if url.endpoint.startsWith("1.1/"): "" else: "graphql/"
+  let prefix = if isRest: "" else: "graphql/"
   parseUri(base) / (prefix & url.endpoint) ? url.params
 
 proc getOauthHeader(url, oauthToken, oauthTokenSecret: string): string =
@@ -123,7 +136,7 @@ template fetchImpl(result, fetchBody) {.dirty.} =
     pool.use(headers):
       template getContent =
         # TODO: this is a temporary simple implementation
-        if apiProxy.len > 0 and "/1.1/" notin url.path:
+        if twitterRelayBaseUrl.len == 0 and apiProxy.len > 0 and "/1.1/" notin url.path:
           resp = await c.get(($url).replace("https://", apiProxy))
         else:
           resp = await c.get($url)
