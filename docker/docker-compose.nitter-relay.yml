@@ -31,7 +31,7 @@ services:
       twitter-relay-kasmweb:
         condition: service_started
     volumes:
-      - ../../twitter_api_safe_relay/docker/settings.json:/app/settings.json:ro
+      - ./settings.json:/app/settings.json:ro
     network_mode: "service:twitter-relay-kasmweb"
 
   nitter:
