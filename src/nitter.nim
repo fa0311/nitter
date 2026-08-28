@@ -9,8 +9,8 @@ import jester
 import types, config, prefs, formatters, redis_cache, http_pool, auth, apiutils
 import views/[general, about]
 import routes/[
-  preferences, timeline, status, media, search, rss, list, debug,
-  unsupported, embed, resolver, broadcast, article, router_utils]
+  preferences, timeline, status, media, search, rss, list, community, debug,
+  unsupported, embed, resolver, broadcast, space, article, router_utils]
 
 const instancesUrl = "https://github.com/zedeus/nitter/wiki/Instances"
 const issuesUrl = "https://github.com/zedeus/nitter/issues"
@@ -34,6 +34,10 @@ stdout.flushFile
 updateDefaultPrefs(fullCfg)
 setCacheTimes(cfg)
 setHmacKey(cfg.hmacKey)
+if cfg.hmacKey.len == 0 or cfg.hmacKey == "secretkey":
+  stderr.write "WARNING: insecure default 'hmacKey' in nitter.conf; " &
+    "set a unique random value to stop media URL signatures being forgeable.\n"
+  stderr.flushFile
 setProxyEncoding(cfg.base64Media)
 setMaxHttpConns(cfg.httpMaxConns)
 setHttpProxy(cfg.proxy, cfg.proxyAuth)
@@ -55,12 +59,14 @@ createResolverRouter(cfg)
 createPrefRouter(cfg)
 createTimelineRouter(cfg)
 createListRouter(cfg)
+createCommunityRouter(cfg)
 createStatusRouter(cfg)
 createSearchRouter(cfg)
 createMediaRouter(cfg)
 createEmbedRouter(cfg)
 createRssRouter(cfg)
 createBroadcastRouter(cfg)
+createSpaceRouter(cfg)
 createDebugRouter(cfg)
 
 settings:
@@ -76,8 +82,8 @@ routes:
     if request.path.len == 0 or request.path[0] != '/':
       halt Http400
 
-    # skip all file URLs
-    cond "." notin request.path
+    # skip all file URLs (except Twitter widget compatibility)
+    cond "." notin request.path or request.path == "/embed/Tweet.html"
     applyUrlPrefs()
 
   get "/":
@@ -127,9 +133,11 @@ routes:
   extend timeline, ""
   extend media, ""
   extend list, ""
+  extend community, ""
   extend preferences, ""
   extend resolver, ""
   extend embed, ""
   extend broadcastRoute, ""
+  extend spaceRoute, ""
   extend debug, ""
   extend unsupported, ""

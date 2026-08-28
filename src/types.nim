@@ -11,7 +11,7 @@ type
   BadClientError* = object of CatchableError
 
   TimelineKind* {.pure.} = enum
-    tweets, replies, media
+    tweets, replies, media, articles
 
   ApiUrl* = object
     endpoint*: string
@@ -61,6 +61,7 @@ type
     rateLimited = 88
     expiredToken = 89
     listIdOrSlug = 112
+    timelineUnavailable = 131
     tweetNotFound = 144
     tweetNotAuthorized = 179
     forbidden = 200
@@ -128,6 +129,28 @@ type
     availableForReplay*: bool
     user*: User
 
+  SpaceParticipant* = object
+    userId*: string
+    username*: string
+    displayName*: string
+    avatarUrl*: string
+    isVerified*: bool
+
+  AudioSpace* = object
+    id*: string
+    title*: string
+    state*: string
+    mediaKey*: string
+    m3u8Url*: string
+    totalLiveListeners*: int
+    totalReplayWatched*: int
+    startTime*: DateTime
+    endTime*: DateTime
+    availableForReplay*: bool
+    creator*: User
+    admins*: seq[SpaceParticipant]
+    speakers*: seq[SpaceParticipant]
+
   VideoType* = enum
     m3u8 = "application/x-mpegURL"
     mp4 = "video/mp4"
@@ -151,7 +174,11 @@ type
     variants*: seq[VideoVariant]
 
   QueryKind* = enum
-    posts, replies, media, users, tweets, userList
+    posts, replies, media, users, tweets, userList, followers, following, lists, top,
+    articles
+
+  RankingMode* = enum
+    Relevance, Recency, Likes
 
   Query* = object
     kind*: QueryKind
@@ -230,6 +257,7 @@ type
     mediaIds*: seq[string]
     tweetId*: string
     markdown*: string
+    caption*: string
 
   ArticleMedia* = object
     kind*: string
@@ -332,6 +360,7 @@ type
     content*: Tweets
     hasMore*: bool
     cursor*: string
+    related*: bool
 
   Conversation* = ref object
     tweet*: Tweet
@@ -361,6 +390,29 @@ type
     members*: int
     banner*: string
 
+  ListSearchResult* = object
+    list*: List
+    owner*: User
+    followersContext*: string
+    facepiles*: seq[string]
+
+  CommunityRule* = object
+    name*: string
+    description*: string
+
+  Community* = object
+    id*: string
+    name*: string
+    description*: string
+    memberCount*: int
+    banner*: string
+    creator*: User
+    category*: string
+    joinPolicy*: string
+    createdAt*: DateTime
+    rules*: seq[CommunityRule]
+    hashtags*: seq[string]
+
   GlobalObjects* = ref object
     tweets*: Table[string, Tweet]
     users*: Table[string, User]
@@ -380,6 +432,7 @@ type
     enableRSSUserTweets*: bool
     enableRSSUserReplies*: bool
     enableRSSUserMedia*: bool
+    enableRSSUserArticles*: bool
     enableRSSSearch*: bool
     enableRSSList*: bool
     enableDebug*: bool

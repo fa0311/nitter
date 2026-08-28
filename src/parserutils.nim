@@ -98,9 +98,9 @@ proc getTimeFromMsStr*(js: JsonNode): DateTime =
 
 proc getId*(id: string): int64 {.inline.} =
   let start = id.rfind("-")
-  if start < 0:
-    return parseBiggestInt(id)
-  return parseBiggestInt(id[start + 1 ..< id.len])
+  try:
+    parseBiggestInt(if start < 0: id else: id[start + 1 ..< id.len])
+  except ValueError: 0'i64
 
 proc getId*(js: JsonNode): int64 {.inline.} =
   case js.kind
@@ -233,9 +233,9 @@ proc replacedWith(runes: seq[Rune]; repls: openArray[ReplaceSlice];
           symbol = $runes[rep.slice.a]
         result.add a(symbol & name, href = "/search?f=tweets&q=%23" & name)
     of rkMention:
-      result.add a($runes[rep.slice], href = rep.url, title = rep.display)
+      result.add a($runes[rep.slice], href = rep.url, title = escape(rep.display))
     of rkUrl:
-      result.add a(rep.display, href = rep.url)
+      result.add a(escape(rep.display), href = rep.url)
     of rkRemove:
       discard
 
@@ -281,7 +281,7 @@ proc expandUserEntities*(user: var User; js: JsonNode) =
                      .replacef(htRegex, htReplace)
 
 proc expandTextEntities(tweet: Tweet; entities: JsonNode; text: string; textSlice: Slice[int];
-                        replyTo=""; hasRedundantLink=false) =
+                        replyTo=""; hasRedundantLink=false; hasArticle=false) =
   let hasCard = tweet.card.isSome
 
   var replacements = newSeq[ReplaceSlice]()
@@ -292,7 +292,8 @@ proc expandTextEntities(tweet: Tweet; entities: JsonNode; text: string; textSlic
       if urlStr.len == 0 or urlStr notin text:
         continue
 
-      replacements.extractUrls(u, textSlice.b, hideTwitter = hasRedundantLink)
+      replacements.extractUrls(u, textSlice.b, hideTwitter = hasRedundantLink,
+                               hideArticle = hasArticle)
 
       if hasCard and u{"url"}.getStr == get(tweet.card).url:
         get(tweet.card).url = u.getExpandedUrl
@@ -329,7 +330,7 @@ proc expandTextEntities(tweet: Tweet; entities: JsonNode; text: string; textSlic
 
   tweet.text = text.toRunes.replacedWith(replacements, textSlice).strip(leading=false)
 
-proc expandTweetEntities*(tweet: Tweet; js: JsonNode) =
+proc expandTweetEntities*(tweet: Tweet; js: JsonNode; hasArticle=false) =
   let
     entities = ? js{"entities"}
     textRange = js{"display_text_range"}
@@ -344,7 +345,7 @@ proc expandTweetEntities*(tweet: Tweet; js: JsonNode) =
       tweet.reply.add replyTo
 
   tweet.expandTextEntities(entities, tweet.text, textSlice, replyTo,
-                           hasQuote or hasJobCard)
+                           hasQuote or hasJobCard, hasArticle)
 
 proc expandTextEntitiesV2(tweet: Tweet; js: JsonNode; text: string; textSlice: Slice[int];
                           hasRedundantLink=false; hasArticle=false) =

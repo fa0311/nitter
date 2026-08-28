@@ -8,7 +8,22 @@ const
   rlRemaining = "x-rate-limit-remaining"
   rlReset = "x-rate-limit-reset"
   rlLimit = "x-rate-limit-limit"
+  npCache = "x-np-cache"
   errorsToSkip = {null, doesntExist, tweetNotFound, timeout, unauthorized, badRequest}
+
+proc isCloudflareHtml*(body: string): bool =
+  ## Detect Cloudflare HTML error pages returned instead of JSON
+  if body.len < 14 or body[0] != '<': return false
+  body[0 ..< 14].toLowerAscii() == "<!doctype html" and "Cloudflare" in body
+
+proc cfTitle*(body: string): string =
+  ## Extract <title> from Cloudflare HTML for log diagnostics
+  let start = body.find("<title>")
+  if start < 0: return "unknown"
+  let contentStart = start + 7
+  let stop = body.find("</title>", contentStart)
+  if stop < 0: return "unknown"
+  body[contentStart ..< stop].splitWhitespace().join(" ")
 
 var
   pool: HttpPool
@@ -41,7 +56,7 @@ proc setTwitterRelayBaseUrl*(url: string) =
     if not (twitterRelayBaseUrl.startsWith("http://") or twitterRelayBaseUrl.startsWith("https://")):
       twitterRelayBaseUrl = "http://" & twitterRelayBaseUrl
 
-proc toUrl(req: ApiReq; sessionKind: SessionKind): Uri =
+proc toUrl*(req: ApiReq; sessionKind: SessionKind): Uri =
   let url = case sessionKind
     of oauth:  req.oauth
     of cookie: req.cookie
@@ -81,14 +96,13 @@ proc genHeaders*(session: Session, url: Uri, skipTid: bool): Future[HttpHeaders]
     "accept": "*/*",
     "accept-encoding": "gzip",
     "accept-language": "en-US,en;q=0.9",
-    "connection": "keep-alive",
     "content-type": "application/json",
     "origin": "https://x.com",
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
     "x-twitter-active-user": "yes",
     "x-twitter-client-language": "en",
     "priority": "u=1, i"
-  })
+  }, titleCase=true)
 
   case session.kind
   of SessionKind.oauth:
@@ -152,7 +166,8 @@ template fetchImpl(result, fetchBody) {.dirty.} =
         echo "[sessions] transient 404 (empty body), retrying: ", url.path, ", session: ", session.pretty
         raise rateLimitError()
 
-    if resp.headers.hasKey(rlRemaining):
+    let cacheStatus = resp.headers.getOrDefault(npCache)
+    if cacheStatus notin ["HIT", "STALE"] and resp.headers.hasKey(rlRemaining):
       let
         remaining = parseInt(resp.headers[rlRemaining])
         reset = parseInt(resp.headers[rlReset])
@@ -162,6 +177,10 @@ template fetchImpl(result, fetchBody) {.dirty.} =
     if result.len > 0:
       if resp.headers.getOrDefault("content-encoding") == "gzip":
         result = uncompress(result, dfGzip)
+
+      if isCloudflareHtml(result):
+        echo "[cloudflare] ", resp.status, " (", cfTitle(result), "), API: ", url.path, ", session: ", session.pretty
+        raise rateLimitError()
 
       if result.startsWith("{\"errors"):
         let errors = result.fromJson(Errors)
